@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # MySQL数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: ai-jubensha-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ai_jubensha
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # Redis缓存服务
+  redis:
+    image: redis:7.0
+    container_name: ai-jubensha-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # RabbitMQ消息队列服务
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: ai-jubensha-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: jubensha
+      RABBITMQ_DEFAULT_PASS: jubensha123
+    ports:
+      - "5672:5672"  # AMQP端口
+      - "15672:15672"  # 管理界面端口
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # Milvus向量数据库服务
+  milvus:
+    image: milvusdb/milvus:v2.3.4
+    container_name: ai-jubensha-milvus
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    ports:
+      - "19530:19530"  # Milvus服务端口
+      - "9091:9091"  # Milvus监控端口
+    volumes:
+      - milvus-data:/var/lib/milvus
+    depends_on:
+      - etcd
+      - minio
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # Etcd服务（Milvus依赖）
+  etcd:
+    image: bitnami/etcd:3.4.13
+    container_name: ai-jubensha-etcd
+    environment:
+      ETCD_ENABLE_V2: "true"
+      ALLOW_NONE_AUTHENTICATION: "yes"
+      ETCD_ADVERTISE_CLIENT_URLS: "http://etcd:2379"
+      ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+    volumes:
+      - etcd-data:/bitnami/etcd
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # MinIO服务（Milvus依赖）
+  minio:
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    container_name: ai-jubensha-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data
+    ports:
+      - "9000:9000"
+      - "9001:9001"  # MinIO控制台端口
+    volumes:
+      - minio-data:/data
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # Elasticsearch搜索引擎服务（可选）
+  elasticsearch:
+    image: elasticsearch:8.6.0
+    container_name: ai-jubensha-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+  # Kibana（Elasticsearch可视化工具，可选）
+  kibana:
+    image: kibana:8.6.0
+    container_name: ai-jubensha-kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    restart: always
+    networks:
+      - ai-jubensha-network
+
+volumes:
+  mysql-data:
+  redis-data:
+  rabbitmq-data:
+  milvus-data:
+  etcd-data:
+  minio-data:
+  es-data:
+
+networks:
+  ai-jubensha-network:
+    driver: bridge
